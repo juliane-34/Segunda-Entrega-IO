@@ -31,6 +31,12 @@ def asm(z, lam, Fx, Fy, U0):
     Uz = np.fft.ifft2(Az)  
     return Uz
 
+def fresnel(z, lam, Fx, Fy, U0):
+    k=2*np.pi/lam
+    H = np.exp(1j * k * z) * np.exp(-1j * (np.pi * lam * z) * (Fx**2 + Fy**2))
+    A0 = np.fft.fft2(U0)   # espectro del campo de entrada (orden no centrado)
+    Uz = np.fft.ifft2(A0 * H)
+    return Uz
 
 #Funcion de lente delgada
 def lente(f, lam, X, Y):
@@ -49,9 +55,13 @@ def pupila_rectangular(ax, ay, X, Y):
 
 #Condicion de muestreo
 def condicion_muestreo(N, dx, z, lam):
-    if z<=(N*dx**2)/(lam):
-        raise ValueError("Condición de muestreo satisfecha: aumenta N o dx, o disminuye z o lam.")
-    return True
+    z_max=(N*dx**2)/(lam)
+    if z<=z_max:
+        c=True
+    else:
+        c=False
+    dx_min=np.sqrt(lam*z/N)
+    return c, z_max, dx_min
 
 
 
@@ -68,11 +78,6 @@ def cargar_transmitancia(ruta_imagen, N, tipo='amplitud'):
     tipo : str
         'amplitud' → solo modula intensidad (0 a 1)
         'fase'     → modula fase (0 a 2π)
-
-    Retorna
-    -------
-    t_xy : ndarray complex128
-        Matriz compleja NxN con la transmitancia t(x,y)
     """
 
     # 1) Cargar y convertir a escala de grises
@@ -120,19 +125,12 @@ def transmitancia_M1(ruta_imagen, N, tipo='amplitud'):
 
 #Definicion de la malla y demas parametros
 
-N=2048
-dx=10e-6
+N=2550
+dx=1*10e-6
 lam=532e-9
 x, y, X, Y, Fx, Fy = grid(N, dx)
 
 
-#Verificacion de la condicion de muestreo
-
-condicion=condicion_muestreo(N, dx, 0.5, lam)
-if condicion==True:
-    print("Condicion de muestreo satisfecha")
-else:
-    print("Condicion de muestreo no satisfecha")
 
 #Dimensiones de los elementos
 
@@ -153,16 +151,37 @@ diafragma_abertura = pupila_circular(D/2, X, Y)
 diafragma_campo = pupila_rectangular(x_cam1, y_cam1, X, Y)
 
 U0=cargar_transmitancia('prueba.png', N, tipo='amplitud')
-Uz=asm(f, lam, Fx, Fy, U0)
+Uz=fresnel(f, lam, Fx, Fy, U0)
 U1=Uz*lente(f, lam, X, Y)*diafragma_abertura
-U2=asm(f, lam, Fx, Fy, U1)
+U2=fresnel(f, lam, Fx, Fy, U1)
 U3=-U2
 #U3=U2*cargar_transmitancia('XXXX.png', N, tipo='amplitud')
-U4=asm(f, lam, Fx, Fy, U3)
+U4=fresnel(f, lam, Fx, Fy, U3)
 U5=U4*lente(f, lam, X, Y)
 Uz_final=asm(f, lam, Fx, Fy, U5)*diafragma_campo
 
-I=np.abs(Uz_final)**2
+I1=np.abs(Uz_final)**2
 
-plt.figure(); plt.imshow(I, cmap="gray");plt.title("Espectro Angular para Z_T"); plt.colorbar()
+
+#Rama Cam2
+
+d1=2*f
+d2=1.5*f
+
+#M2
+diam=0.05
+rad=diam/2
+
+u1=fresnel(d1, lam, Fx, Fy, U0)
+u2=u1*pupila_circular(rad, X, Y)
+u3=fresnel(d2, lam, Fx, Fy, u2)
+u4=u3*lente(f, lam, X, Y)*pupila_circular(D/2,X,Y)
+u5=fresnel(f, lam, Fx, Fy, u4)
+
+I2=np.abs(u5)**2
+
+
+
+plt.figure(figsize=(9,5)); plt.imshow(I1, cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
+plt.figure(figsize=(9,5)); plt.imshow(I2, cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
 plt.show()
