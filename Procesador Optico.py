@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
-
+from scipy.ndimage import median_filter, maximum_filter, gaussian_filter
 
 # Funciones para definir mallas y elementos ópticos
 def grid(N, dx):
@@ -116,10 +116,106 @@ def transmitancia_M1(X, Y,tipo):
         t=t*(X**2 + Y**2 <= radio2**2).astype(np.complex128)
     return t
 
+def filtros(I):
+    r=0.1
+    maximos = np.quantile(I, 0.999)        # o np.percentile(I, 90)
+    filtros = I >= maximos              # booleano con los píxeles seleccionados
+    indice = np.argwhere(filtros)
+    return indice
+    #coords_peaks = peak_local_max(I, min_distance=3, threshold_abs=thr_p90)
+
+
+def transmitancia_discos_numpy(shape, centers_rc, radius_px, T_out=1.0, T_in=0.0):
+    """
+    Crea T(y,x) con discos de transmitancia T_in en centros dados (fila,col), radio en pixeles.
+    - shape: (Ny, Nx)
+    - centers_rc: array Nx2 de enteros [[r1,c1],[r2,c2],...]
+    - radius_px: int o float
+    """
+    Ny, Nx = shape
+    T = np.full(shape, T_out, dtype=float)
+    rr = np.arange(Ny)[:, None]  # (Ny,1)
+    cc = np.arange(Nx)[None, :]  # (1,Nx)
+    r2 = float(radius_px*dx)**2
+
+    # Opción segura: bucle por centros (rápido en la práctica salvo miles de centros muy grandes)
+    for r0, c0 in centers_rc:
+        # recorta a ventana mínima para acelerar
+        rmin = max(int(r0 - radius_px), 0)
+        rmax = min(int(r0 + radius_px) + 1, Ny)
+        cmin = max(int(c0 - radius_px), 0)
+        cmax = min(int(c0 + radius_px) + 1, Nx)
+
+        R = rr[rmin:rmax] - r0
+        C = cc[:, cmin:cmax] - c0
+        # cuadrícula local (submatriz)
+        dist2 = R**2 + C**2
+        mask_local = dist2 <= r2
+        T[rmin:rmax, cmin:cmax][mask_local] = T_in
+
+    return T
+
+def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
+
+    transformada=np.fft.fftshift(np.fft.fft2(U))
+
+    if presuavizado > 0:
+        X = gaussian_filter(U, presuavizado)
+
+    S=np.log1p(1+np.abs(transformada))
+
+    M = median_filter(S, size=11)   # mediana local
+    ratio = (S + 1e-12) / (M + 1e-12)
+
+    thr = np.percentile(ratio, pctl) # Umbral por percentil
+    mask_thr = ratio >= thr # Matriz booleana de picos
+    neigh = 2*min_dist + 1  # ??  A partir de que punto consideramos dos maximos distintos
+    mask_max = (maximum_filter(S, size=neigh) == S)  # ??  Matriz booleana de maximos locales
+
+    # Proteccion DC
+    Ny, Nx = S.shape
+    cy, cx = Ny//2, Nx//2
+    yy, xx = np.ogrid[:Ny, :Nx]
+    dc_mask = (yy-cy)**2 + (xx-cx)**2 <= dc**2
+    #
+    cand = mask_thr & mask_max & (~dc_mask)
+    coords = np.argwhere(cand)
+
+
+    #Filtro adaptativo
+    M = median_filter(S, size=neigh)
+    base_sigma=3
+    k=3
+    sigmas = []
+    for r, c in coords:
+        mloc = M[r, c] + 1e-12
+        contr = max(S[r, c] - mloc, 0.0) / mloc
+        sigmas.append(base_sigma * (1.0 + k*contr))
+    ponderaciones = np.array(sigmas, float)
+    
+    Ny, Nx = 2400, 2400
+    yy, xx = np.ogrid[:Ny, :Nx]  # mallas sin ocupar tanta memoria
+
+    # matriz inicial completamente transparente
+    T = np.full(N, 1, dtype=float)
+
+    for (r0, c0), sigma in zip(coords, sigmas):
+        if sigma <= 0:
+            continue
+        # distancia al pico
+        d2 = (yy - r0)**2 + (xx - c0)**2
+        # notch gaussiano (transmitancia baja cerca del centro)
+        notch = np.exp(-d2 / (2.0 * sigma**2))
+        # 1 - notch -> 0 en el centro, 1 lejos
+        T *= (1 - notch)  # multiplicativo → combina varios picos
+
+    return np.clip(T, 0, 1)
+
+
 
 #Definicion de la malla y demas parametros
 
-N=512
+N=2400
 dx=1*10e-6
 lam=532e-9
 x, y, X, Y, Fx, Fy = grid(N, dx)
@@ -133,29 +229,7 @@ x, y, X, Y, Fx, Fy = grid(N, dx)
 f=0.5
 D=0.1
 
-#Cam1
-#4640 x 3506 píxeles cuadrados de 3.8 µm de lado.
-x_cam1=3.8e-6*4640
-y_cam1=3.8e-6*3506
-
-
-#Rama Cam1
-
-diafragma_abertura = pupila_circular(D/2, X, Y)
-diafragma_campo = pupila_rectangular(x_cam1, y_cam1, X, Y)
-
-U0=cargar_transmitancia('Noise (10).png', N, tipo='amplitud')
-Uz=fresnel(f, lam, Fx, Fy, U0)
-U1=Uz*lente(f, lam, X, Y)*diafragma_abertura
-U2=fresnel(f, lam, Fx, Fy, U1)
-#U3=-U2
-U3=U2*transmitancia_M1(X, Y,'bajas')
-U4=fresnel(f, lam, Fx, Fy, U3)
-U5=U4*lente(f, lam, X, Y)
-Uz_final=fresnel(f, lam, Fx, Fy, U5)*diafragma_campo
-
-I1=np.abs(Uz_final)**2
-
+U0=cargar_transmitancia('Noise (7).png', N, tipo='amplitud')
 
 #Rama Cam2
 
@@ -168,18 +242,46 @@ rad=diam/2
 
 u1=fresnel(d1, lam, Fx, Fy, U0)
 u2=u1*pupila_circular(rad, X, Y)
-u3=fresnel(f, lam, Fx, Fy, u2)
+u3=fresnel(d1, lam, Fx, Fy, u2)
 u4=u3*lente(f, lam, X, Y)*pupila_circular(D/2,X,Y)
 u5=fresnel(f, lam, Fx, Fy, u4)
 
 A=np.abs(U0)**2
 y=np.abs(np.fft.fftshift(np.fft.fft2(U0))**2)
 I2=np.abs(u5)**2
+j=filtros(I2)
+k=filtro(U0,99.5,5,3,5)
 g=np.abs(transmitancia_M1(X, Y,'anillo'))**2
 
 
+#Cam1
+#4640 x 3506 píxeles cuadrados de 3.8 µm de lado.
+x_cam1=3.8e-6*4640
+y_cam1=3.8e-6*3506
+
+
+#Rama Cam1
+
+diafragma_abertura = pupila_circular(D/2, X, Y)
+diafragma_campo = pupila_rectangular(x_cam1, y_cam1, X, Y)
+
+Uz=fresnel(f, lam, Fx, Fy, U0)
+U1=Uz*lente(f, lam, X, Y)*diafragma_abertura
+U2=fresnel(f, lam, Fx, Fy, U1)
+#U3=-U2
+U3=U2*k
+U4=fresnel(f, lam, Fx, Fy, U3)
+U5=U4*lente(f, lam, X, Y)
+Uz_final=fresnel(f, lam, Fx, Fy, U5)*diafragma_campo
+
+I1=np.abs(Uz_final)**2
+
+
+
+
+
 plt.figure(figsize=(9,5)); plt.imshow(A, cmap="gray");plt.title("Campo en U0"); plt.colorbar()
-plt.figure(figsize=(9,5)); plt.imshow(g, cmap="gray");plt.title("Transmitancia"); plt.colorbar()
+plt.figure(figsize=(9,5)); plt.imshow(k, cmap="gray");plt.title("Transmitancia"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(I1, cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(I2, cmap="gray");plt.title("Campo en Cam2"); plt.colorbar()
 plt.show()
