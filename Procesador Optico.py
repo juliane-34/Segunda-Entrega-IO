@@ -15,28 +15,41 @@ def grid(N, dx):
     Fx,Fy = np.meshgrid(fx,fy, indexing='xy')
     return x, y, X, Y, Fx, Fy
 
-#Funcion de propagacion en el espacio libre
-def asm(z, lam, Fx, Fy, U0):
-    
-    n=1
-    k=2*n*np.pi/lam
 
-    fr2=(Fx*lam)**2+(Fy*lam)**2
 
-    H = np.exp(1j * k * z * np.sqrt(np.maximum(0.0, 1.0 - fr2))) 
-    #Se cancelan las ondas evanescentes
-    H[fr2>1]=0.0
-    A0 = np.fft.fft2(U0)        # Espectro angular de entrada (no centrado)
-    Az = A0 * H                 # Aplicar H en el dominio de frecuencias
-    Uz = np.fft.ifft2(Az)  
-    return Uz
+def propagacion(z, lam, Fx, Fy, U0, N, dx, pad_factor=2):
+    z_max = (N*dx**2)/lam
+    c = (z <= z_max)
+    dx_min = np.sqrt(lam*z/N)
 
-def fresnel(z, lam, Fx, Fy, U0):
-    k=2*np.pi/lam
-    H = np.exp(1j * k * z) * np.exp(-1j * (np.pi * lam * z) * (Fx**2 + Fy**2))
-    A0 = np.fft.fft2(U0)   # espectro del campo de entrada (orden no centrado)
-    Uz = np.fft.ifft2(A0 * H)
-    return Uz
+    # --- Padding (agregar ceros alrededor) ---
+    Npad = int(N * pad_factor)
+    pad_before = (Npad - N) // 2
+    pad_after  = Npad - N - pad_before
+    U0_pad = np.pad(U0, ((pad_before, pad_after), (pad_before, pad_after)),
+                    mode='constant', constant_values=0)
+
+    # Frecuencias para el tamaño padded (sin shift)
+    fx_pad = np.fft.fftfreq(Npad, d=dx)
+    fy_pad = np.fft.fftfreq(Npad, d=dx)
+    Fx_pad, Fy_pad = np.meshgrid(fx_pad, fy_pad, indexing='xy')
+
+    if c:  # Angular Spectrum
+        k = 2*np.pi/lam
+        fr2 = (Fx_pad*lam)**2 + (Fy_pad*lam)**2
+        H = np.exp(1j * k * z * np.sqrt(np.maximum(0.0, 1.0 - fr2)))
+        H[fr2 > 1.0] = 0.0
+        A0 = np.fft.fft2(U0_pad)
+        Uz_pad = np.fft.ifft2(A0 * H)
+        Uz = Uz_pad[pad_before:pad_before+N, pad_before:pad_before+N]
+        return Uz
+    else:  # Fresnel
+        k = 2*np.pi/lam
+        H = np.exp(1j * k * z) * np.exp(-1j * (np.pi * lam * z) * (Fx_pad**2 + Fy_pad**2))
+        A0 = np.fft.fft2(U0_pad)
+        Uz_pad = np.fft.ifft2(A0 * H)
+        Uz = Uz_pad[pad_before:pad_before+N, pad_before:pad_before+N]
+        return Uz
 
 #Funcion de lente delgada
 def lente(f, lam, X, Y):
@@ -53,31 +66,12 @@ def pupila_circular(R, X, Y):
 def pupila_rectangular(ax, ay, X, Y):
     return ((np.abs(X) <= ax/2) & (np.abs(Y) <= ay/2)).astype(np.complex128)
 
-#Condicion de muestreo
-def condicion_muestreo(N, dx, z, lam):
-    z_max=(N*dx**2)/(lam)
-    if z<=z_max:
-        c=True
-    else:
-        c=False
-    dx_min=np.sqrt(lam*z/N)
-    return c, z_max, dx_min
 
 
 
 def cargar_transmitancia(ruta_imagen, N, tipo='amplitud'):
     """
-    Carga una imagen y la convierte en una función de transmitancia.
-    
-    Parámetros
-    ----------
-    ruta_imagen : str
-        Ruta al archivo de imagen (png, jpg, etc.)
-    N : int
-        Tamaño de la malla cuadrada de tu simulación (NxN)
-    tipo : str
-        'amplitud' → solo modula intensidad (0 a 1)
-        'fase'     → modula fase (0 a 2π)
+ → modula fase (0 a 2π)
     """
 
     # 1) Cargar y convertir a escala de grises
@@ -102,58 +96,8 @@ def cargar_transmitancia(ruta_imagen, N, tipo='amplitud'):
     return t_xy
 
 
-def transmitancia_M1(X, Y,tipo):
-
-    radio1=0.25e-3
-    radio2=radio1+0.1e-3
-
-    if tipo == 'altas':
-        t=(X**2 + Y**2 >= radio1**2).astype(np.complex128)
-    elif tipo == 'bajas':
-        t=(X**2 + Y**2 <= radio1**2).astype(np.complex128)
-    elif tipo == 'anillo':
-        t=(X**2 + Y**2 >= radio1**2).astype(np.complex128)
-        t=t*(X**2 + Y**2 <= radio2**2).astype(np.complex128)
-    return t
-
-def filtros(I):
-    r=0.1
-    maximos = np.quantile(I, 0.999)        # o np.percentile(I, 90)
-    filtros = I >= maximos              # booleano con los píxeles seleccionados
-    indice = np.argwhere(filtros)
-    return indice
-    #coords_peaks = peak_local_max(I, min_distance=3, threshold_abs=thr_p90)
 
 
-def transmitancia_discos_numpy(shape, centers_rc, radius_px, T_out=1.0, T_in=0.0):
-    """
-    Crea T(y,x) con discos de transmitancia T_in en centros dados (fila,col), radio en pixeles.
-    - shape: (Ny, Nx)
-    - centers_rc: array Nx2 de enteros [[r1,c1],[r2,c2],...]
-    - radius_px: int o float
-    """
-    Ny, Nx = shape
-    T = np.full(shape, T_out, dtype=float)
-    rr = np.arange(Ny)[:, None]  # (Ny,1)
-    cc = np.arange(Nx)[None, :]  # (1,Nx)
-    r2 = float(radius_px*dx)**2
-
-    # Opción segura: bucle por centros (rápido en la práctica salvo miles de centros muy grandes)
-    for r0, c0 in centers_rc:
-        # recorta a ventana mínima para acelerar
-        rmin = max(int(r0 - radius_px), 0)
-        rmax = min(int(r0 + radius_px) + 1, Ny)
-        cmin = max(int(c0 - radius_px), 0)
-        cmax = min(int(c0 + radius_px) + 1, Nx)
-
-        R = rr[rmin:rmax] - r0
-        C = cc[:, cmin:cmax] - c0
-        # cuadrícula local (submatriz)
-        dist2 = R**2 + C**2
-        mask_local = dist2 <= r2
-        T[rmin:rmax, cmin:cmax][mask_local] = T_in
-
-    return T
 
 def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
 
@@ -203,7 +147,7 @@ def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
     yy, xx = np.ogrid[:Ny, :Nx]  # mallas sin ocupar tanta memoria
 
     # matriz inicial completamente transparente
-    T = np.full((Nx,Ny), 1, dtype=float)
+    T = np.full((Nx,Ny), 1.0, dtype=float)
 
     for (r0, c0), sigma in zip(coords, sigmas):
         if sigma <= 0:
@@ -226,8 +170,6 @@ dx=1*10e-6
 lam=532e-9
 x, y, X, Y, Fx, Fy = grid(N, dx)
 
-
-
 #Dimensiones de los elementos
 
 #L1 y L2
@@ -246,18 +188,15 @@ d2=f/2
 diam=0.05
 rad=diam/2
 
-u1=fresnel(d1, lam, Fx, Fy, U0)
+u1=propagacion(d1, lam, Fx, Fy, U0, N, dx, pad_factor=2)
 u2=u1*pupila_circular(rad, X, Y)
-u3=fresnel(d1, lam, Fx, Fy, u2)
+u3=propagacion(d1, lam, Fx, Fy, u2, N, dx, pad_factor=2)
 u4=u3*lente(f, lam, X, Y)*pupila_circular(D/2,X,Y)
-u5=fresnel(f, lam, Fx, Fy, u4)
+u5=propagacion(f, lam, Fx, Fy, u4, N, dx, pad_factor=2)
 
 A=np.abs(U0)**2
-y=np.abs(np.fft.fftshift(np.fft.fft2(U0))**2)
 I2=np.abs(u5)**2
-j=filtros(I2)
 k=filtro(U0,90,5,0,5)
-g=np.abs(transmitancia_M1(X, Y,'anillo'))**2
 
 
 #Cam1
@@ -271,18 +210,16 @@ y_cam1=3.8e-6*3506
 diafragma_abertura = pupila_circular(D/2, X, Y)
 diafragma_campo = pupila_rectangular(x_cam1, y_cam1, X, Y)
 
-Uz=fresnel(f, lam, Fx, Fy, U0)
+Uz=propagacion(f, lam, Fx, Fy, U0, N, dx, pad_factor=2)
 U1=Uz*lente(f, lam, X, Y)*diafragma_abertura
-U2=fresnel(f, lam, Fx, Fy, U1)
+U2=propagacion(f, lam, Fx, Fy, U1, N, dx, pad_factor=2)
 #U3=-U2
 U3=U2*k
-U4=fresnel(f, lam, Fx, Fy, U3)
+U4=propagacion(f, lam, Fx, Fy, U3, N, dx, pad_factor=2)
 U5=U4*lente(f, lam, X, Y)
-Uz_final=fresnel(f, lam, Fx, Fy, U5)*diafragma_campo
+Uz_final=propagacion(f, lam, Fx, Fy, U5, N, dx, pad_factor=2)*diafragma_campo
 
 I1=np.abs(Uz_final)**2
-
-
 
 
 
