@@ -157,12 +157,14 @@ def transmitancia_discos_numpy(shape, centers_rc, radius_px, T_out=1.0, T_in=0.0
 
 def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
 
-    transformada=np.fft.fftshift(np.fft.fft2(U))
+    
 
     if presuavizado > 0:
-        X = gaussian_filter(U, presuavizado)
+        U = gaussian_filter(U, presuavizado)
 
-    S=np.log1p(1+np.abs(transformada))
+    transformada=np.fft.fftshift(np.fft.fft2(U))
+
+    S=np.log1p(np.abs(transformada))
 
     M = median_filter(S, size=11)   # mediana local
     ratio = (S + 1e-12) / (M + 1e-12)
@@ -183,7 +185,7 @@ def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
 
 
     #Filtro adaptativo
-    M = median_filter(S, size=neigh)
+    #M = median_filter(S, size=neigh)
     base_sigma=3
     k=3
     sigmas = []
@@ -193,11 +195,15 @@ def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
         sigmas.append(base_sigma * (1.0 + k*contr))
     ponderaciones = np.array(sigmas, float)
     
-    Ny, Nx = 2400, 2400
+    if coords.size == 0:
+        T = np.ones_like(S, dtype=float)
+        return T
+    
+    Ny, Nx = S.shape
     yy, xx = np.ogrid[:Ny, :Nx]  # mallas sin ocupar tanta memoria
 
     # matriz inicial completamente transparente
-    T = np.full(N, 1, dtype=float)
+    T = np.full((Nx,Ny), 1, dtype=float)
 
     for (r0, c0), sigma in zip(coords, sigmas):
         if sigma <= 0:
@@ -215,7 +221,7 @@ def filtro(U,pctl,min_dist=5,presuavizado=0,dc=5):
 
 #Definicion de la malla y demas parametros
 
-N=2400
+N=1024
 dx=1*10e-6
 lam=532e-9
 x, y, X, Y, Fx, Fy = grid(N, dx)
@@ -229,7 +235,7 @@ x, y, X, Y, Fx, Fy = grid(N, dx)
 f=0.5
 D=0.1
 
-U0=cargar_transmitancia('Noise (7).png', N, tipo='amplitud')
+U0=cargar_transmitancia('Noise (1).png', N, tipo='amplitud')
 
 #Rama Cam2
 
@@ -250,7 +256,7 @@ A=np.abs(U0)**2
 y=np.abs(np.fft.fftshift(np.fft.fft2(U0))**2)
 I2=np.abs(u5)**2
 j=filtros(I2)
-k=filtro(U0,99.5,5,3,5)
+k=filtro(U0,90,5,0,5)
 g=np.abs(transmitancia_M1(X, Y,'anillo'))**2
 
 
