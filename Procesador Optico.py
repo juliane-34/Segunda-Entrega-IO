@@ -318,20 +318,20 @@ d2=f/2
 diam=0.05
 rad=diam/2
 
-u1=propagacion(d1, lam, Fx, Fy, U0, N, dx, pad_factor=2,apodizar=True,taper_frac=0.05,bandlimit_frac=0.92)
+u1=propagacion(d1, lam, Fx, Fy, U0, N, dx, pad_factor=2,apodizar=False,taper_frac=0.05,bandlimit_frac=0.92)
 u2=u1*pupila_circular(rad, X, Y)
-u3=propagacion(d1, lam, Fx, Fy, u2, N, dx, pad_factor=2,apodizar=True, 
+u3=propagacion(d1, lam, Fx, Fy, u2, N, dx, pad_factor=2,apodizar=False, 
                 taper_frac=0.05,       # 5% por lado
                 bandlimit_frac=0.92)
 u4=u3*lente(f, lam, X, Y)*pupila_circular(D/2,X,Y)
-u5=propagacion(f, lam, Fx, Fy, u4, N, dx, pad_factor=2,apodizar=True, 
+u5=propagacion(f, lam, Fx, Fy, u4, N, dx, pad_factor=2,apodizar=False, 
                 taper_frac=0.05,       # 5% por lado
                 bandlimit_frac=0.92)
 
 A=np.abs(U0)**2
 I2=np.abs(u5)**2
 
-picos=[[963,939],[1084,939],[963,1108],[1084,1108]]
+picos=[[984,992],[1001,1006],[970,1039],[1063,1055],[1046,1041],[1077,1008]]
 
 #k=filtro(U0,99,1,0,1e-6)
 r=20
@@ -351,20 +351,20 @@ y_cam1=3.8e-6*3506
 diafragma_abertura = pupila_circular(D/2, X, Y)
 diafragma_campo = pupila_rectangular(x_cam1, y_cam1, X, Y)
 
-Uz=propagacion(f, lam, Fx, Fy, U0, N, dx, pad_factor=2,apodizar=True, 
+Uz=propagacion(f, lam, Fx, Fy, U0, N, dx, pad_factor=2,apodizar=False, 
                 taper_frac=0.05,       # 5% por lado
                 bandlimit_frac=0.92)
 U1=Uz*lente(f, lam, X, Y)*diafragma_abertura
-U2=propagacion(f, lam, Fx, Fy, U1, N, dx, pad_factor=2,apodizar=True, 
+U2=propagacion(f, lam, Fx, Fy, U1, N, dx, pad_factor=2,apodizar=False, 
                 taper_frac=0.05,       # 5% por lado
                 bandlimit_frac=0.92)
 #U3=-U2
 U3=U2*k
-U4=propagacion(f, lam, Fx, Fy, U3, N, dx, pad_factor=2,apodizar=True, 
+U4=propagacion(f, lam, Fx, Fy, U3, N, dx, pad_factor=2,apodizar=False, 
                 taper_frac=0.05,       # 5% por lado
                 bandlimit_frac=0.92)
 U5=U4*lente(f, lam, X, Y)
-Uz_final=propagacion(f, lam, Fx, Fy, U5, N, dx, pad_factor=2,apodizar=True, 
+Uz_final=propagacion(f, lam, Fx, Fy, U5, N, dx, pad_factor=2,apodizar=False, 
                 taper_frac=0.05,       # 5% por lado
                 bandlimit_frac=0.92)*diafragma_campo
 
@@ -374,6 +374,6 @@ I1=np.abs(Uz_final)**2
 
 plt.figure(figsize=(9,5)); plt.imshow(np.log(np.abs(U3)**2), cmap="gray");plt.title("Campo en U0"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(k, cmap="gray");plt.title("Transmitancia"); plt.colorbar()
-plt.figure(figsize=(9,5)); plt.imshow(I1, cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
+plt.figure(figsize=(9,5)); plt.imshow(np.flip(I1), cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(np.log(I2), cmap="gray");plt.title("Campo en Cam2"); plt.colorbar()
 plt.show()
