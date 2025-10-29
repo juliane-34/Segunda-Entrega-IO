@@ -307,7 +307,7 @@ x, y, X, Y, Fx, Fy = grid(N, dx)
 f=0.5
 D=0.1
 
-U0=cargar_transmitancia('Noise (18).png', N, tipo='amplitud')
+U0=cargar_transmitancia('Noise (16).png', N, tipo='amplitud')
 
 #Rama Cam2
 
@@ -330,13 +330,16 @@ u5=propagacion(f, lam, Fx, Fy, u4, N, dx, pad_factor=2,apodizar=False,
 
 A=np.abs(U0)**2
 I2=np.abs(u5)**2
-
-picos=[[984,992],[1001,1006],[970,1039],[1063,1055],[1046,1041],[1077,1008]]
+prepicos=[[944,1041],[997,1008],[997,1043]]
+picos=prepicos
+for i in range(len(prepicos)):
+    picos.append([N-prepicos[i][0],N-prepicos[i][1]])
+#picos=[[984,992],[1001,1006],[970,1039],[1063,1055],[1046,1041],[1077,1008]]
 
 #k=filtro(U0,99,1,0,1e-6)
 r=20
 #k=mascara_circular_picos((N,N), picos, r)
-sigma_px = 15
+sigma_px = 5
 k= mascara_gaussiana_picos((N,N), picos, sigma_px, amplitud=1.0)
 
 
@@ -372,7 +375,7 @@ I1=np.abs(Uz_final)**2
 
 
 
-plt.figure(figsize=(9,5)); plt.imshow(np.log(np.abs(U3)**2), cmap="gray");plt.title("Campo en U0"); plt.colorbar()
+#plt.figure(figsize=(9,5)); plt.imshow(np.log(np.abs(U3)**2), cmap="gray");plt.title("Campo en U0"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(k, cmap="gray");plt.title("Transmitancia"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(np.flip(I1), cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
 plt.figure(figsize=(9,5)); plt.imshow(np.log(I2), cmap="gray");plt.title("Campo en Cam2"); plt.colorbar()
