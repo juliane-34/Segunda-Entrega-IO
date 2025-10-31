@@ -51,7 +51,6 @@ def grid(N, dx):
         Uz = Uz_pad[pad_before:pad_before+N, pad_before:pad_before+N]
         return Uz
 
-import numpy as np
 
 def propagacion(z, lam, Fx, Fy, U0, N, dx, 
                 pad_factor=2, 
@@ -307,7 +306,7 @@ x, y, X, Y, Fx, Fy = grid(N, dx)
 f=0.5
 D=0.1
 
-U0=cargar_transmitancia('Noise (16).png', N, tipo='amplitud')
+U0=cargar_transmitancia('Noise (1).png', N, tipo='amplitud')
 
 #Rama Cam2
 
@@ -330,12 +329,12 @@ u5=propagacion(f, lam, Fx, Fy, u4, N, dx, pad_factor=2,apodizar=False,
 
 A=np.abs(U0)**2
 I2=np.abs(u5)**2
-prepicos=[[944,1041],[997,1008],[997,1043]]
+prepicos=[[963,969],[963,1108]]
 picos=prepicos
 for i in range(len(prepicos)):
     picos.append([N-prepicos[i][0],N-prepicos[i][1]])
 #picos=[[984,992],[1001,1006],[970,1039],[1063,1055],[1046,1041],[1077,1008]]
-
+picos=[[963,939],[963,1108],[1084,939],[1084,1108]]
 #k=filtro(U0,99,1,0,1e-6)
 r=20
 #k=mascara_circular_picos((N,N), picos, r)
@@ -374,9 +373,45 @@ Uz_final=propagacion(f, lam, Fx, Fy, U5, N, dx, pad_factor=2,apodizar=False,
 I1=np.abs(Uz_final)**2
 
 
+xx = (np.arange(N) - N//2) * dx
+yy = (np.arange(N) - N//2) * dx
 
-#plt.figure(figsize=(9,5)); plt.imshow(np.log(np.abs(U3)**2), cmap="gray");plt.title("Campo en U0"); plt.colorbar()
-plt.figure(figsize=(9,5)); plt.imshow(k, cmap="gray");plt.title("Transmitancia"); plt.colorbar()
-plt.figure(figsize=(9,5)); plt.imshow(np.flip(I1), cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
-plt.figure(figsize=(9,5)); plt.imshow(np.log(I2), cmap="gray");plt.title("Campo en Cam2"); plt.colorbar()
+x_um = xx*1e3
+y_um = yy*1e3
+
+#plt.figure(figsize=(5,5)); plt.imshow(np.abs(U0)**2, cmap="gray");plt.title("Campo en U0"); plt.colorbar()
+#plt.figure(figsize=(5,5)); plt.imshow(k, cmap="gray");plt.title("Transmitancia"); plt.colorbar()
+#plt.figure(figsize=(9,5)); plt.imshow(np.flip(I1), cmap="gray");plt.title("Campo en Cam1"); plt.colorbar()
+#plt.figure(figsize=(5,5)); plt.imshow(np.log1p(I2), cmap="gray");plt.title("Campo en Cam2"); plt.colorbar()
+
+
+plt.figure(figsize=(7,7));plt.imshow(np.flip(I1), cmap="gray",
+           extent=[x_um[0], x_um[-1], y_um[0], y_um[-1]])
+plt.xlabel("x [mm]")
+plt.ylabel("y [mm]")
+plt.title("Campo en Cam1")
+plt.colorbar(label="Intensidad")
+
+plt.figure(figsize=(7,7));plt.imshow(np.abs(U0)**2, cmap="gray",
+           extent=[x_um[0], x_um[-1], y_um[0], y_um[-1]])
+plt.xlabel("x [mm]")
+plt.ylabel("y [mm]")
+plt.title("Campo Inicial")
+plt.colorbar(label="Intensidad")
+
+plt.figure(figsize=(7,7));plt.imshow(np.abs(k)**2, cmap="gray",
+           extent=[x_um[0], x_um[-1], y_um[0], y_um[-1]])
+plt.xlabel("x [mm]")
+plt.ylabel("y [mm]")
+plt.title("Máscara de filtro")
+plt.colorbar(label="Intensidad")
+
+plt.figure(figsize=(7,7));plt.imshow(np.log1p(I2), cmap="gray",
+           extent=[x_um[0], x_um[-1], y_um[0], y_um[-1]])
+plt.xlabel("x [mm]")
+plt.ylabel("y [mm]")
+plt.title("Campo en Cam2")
+plt.colorbar(label="Intensidad")
+
+
 plt.show()
